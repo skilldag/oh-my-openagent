@@ -7,6 +7,7 @@ import { createHooks } from "./create-hooks"
 import { createManagers } from "./create-managers"
 import { createRuntimeTmuxConfig, isTmuxIntegrationEnabled } from "./create-runtime-tmux-config"
 import { createTools } from "./create-tools"
+import { initializeOpenClaw } from "./openclaw"
 import { createPluginInterface } from "./plugin-interface"
 import { createPluginDispose, type PluginDispose } from "./plugin-dispose"
 
@@ -15,8 +16,9 @@ import { createModelCacheState } from "./plugin-state"
 import { createFirstMessageVariantGate } from "./shared/first-message-variant"
 import { injectServerAuthIntoClient, log, logLegacyPluginStartupWarning } from "./shared"
 import { detectExternalSkillPlugin, getSkillPluginConflictWarning } from "./shared/external-plugin-detector"
+import { startBackgroundCheck as startTmuxCheck } from "./tools/interactive-bash"
 import { lspManager } from "./tools/lsp/client"
-import { startTmuxCheck } from "./tools"
+import { createPluginPostHog, getPostHogDistinctId } from "./shared/posthog"
 
 let activePluginDispose: PluginDispose | null = null
 
@@ -36,6 +38,19 @@ const OhMyOpenCodePlugin: Plugin = async (ctx) => {
   await activePluginDispose?.()
 
   const pluginConfig = loadPluginConfig(ctx.directory, ctx)
+
+  const posthog = createPluginPostHog()
+  posthog.capture({
+    distinctId: getPostHogDistinctId(),
+    event: "plugin_loaded",
+    properties: {
+      has_openclaw: !!pluginConfig.openclaw,
+      tmux_enabled: isTmuxIntegrationEnabled(pluginConfig),
+    },
+  })
+  if (pluginConfig.openclaw) {
+    await initializeOpenClaw(pluginConfig.openclaw)
+  }
   const tmuxIntegrationEnabled = isTmuxIntegrationEnabled(pluginConfig)
   if (tmuxIntegrationEnabled) {
     startTmuxCheck()
